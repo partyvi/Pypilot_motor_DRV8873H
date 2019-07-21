@@ -1,0 +1,45 @@
+This motor controller monitor receives commands over a serial port.
+
+
+It monitors voltage, current, temperature and fault pins, and
+outputs PWM to command an ESC.
+
+The ESC may need to be reprogrammed to have forward and reverse,
+and brushed or brushless.
+
+
+Based on arduino nano.  The efuse byte should be set to enable the
+brown-out detector (BOD) not always enabled by default.  This is critical
+to ensure flash pages are not corrupted.   Also, often nano clones
+don't set the lock bits correctly.  If the BAD_FUSES flag is reported it
+the fuses should be programmed correctly
+
+To enable, with one arduino programmed with arduinoisp
+
+Read:
+avrdude -c avrisp -b 19200 -P /dev/ttyUSB0 -u -p m328p -U efuse:r:-:h
+
+Write:
+avrdude -c avrisp -b 19200 -P /dev/ttyUSB0 -u -p m328p -U efuse:w:0x4:m
+avrdude -c avrisp -b 19200 -P /dev/ttyUSB0 -u -p m328p -U lock:w:0xcf:m
+
+
+NOTE:  Sometimes this fails with avrdude: stk500_disable(): unknown response=0x12
+despite correct connections. a simple workaround is to use 38400 baud rate one time:
+avrdude -c avrisp -b 38400 -P /dev/ttyUSB0 -u -p m328p -U efuse:r:-:h
+resuling in: avrdude: stk500_getsync() attempt 1 of 10: not in sync: resp=0x00 etc..
+yes, it fails, then try again with the correct baud rate this somehow fixes it
+
+
+If the ESC has the bootloader loaded:
+   The ESC can be programmed over the 1 wire interface.
+   The arduino script ArduinoUSBLinker must be loaded to the arduino.
+   The ESC can be programmed from the makefile commands in the brushed_tgy repository.
+   Once the ESC is programmed, the arduino can be reprogrammed back to motor.ino
+
+Without bootloader (requires soldering, or special tool)
+   arduinoisp script loaded to additional arduino.
+   The ESC can install the bootloader this way.
+   This arduino must be connected to the esc:
+   SCK MISO MOSI 5v GND - connected between both arduinos
+   RESET (esc) <-> D10 (arduino) connected 
