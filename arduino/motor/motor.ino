@@ -6,6 +6,19 @@
  * version 3 of the License, or (at your option) any later version.
  */
 
+ /*
+	  Modified by Viktor Partyshev <partyvi@gmail.com>
+	  7/21/2019
+	  Support added:
+			for H bridge DRV8873H 
+			Magnetic rotation sensor AMS5601 for rudder sensor
+	  This file has to be built with:
+		AMS_5601.cpp
+		AMS_5601.h
+		gpio_i2c.cpp
+		gpio_i2c.h
+*/
+
 #include <Arduino.h>
 #include <stdint.h>
 #include <HardwareSerial.h>
@@ -110,14 +123,72 @@ PWR+             VIN
                  tx         rx
                  rx         tx
                  gnd        gnd
+				 
+				 
+				 
+
+//----------------------------------------------------------------------
+DRV8873H board support (up to 7 amp driver (fully protected driver 10A, T=175C))
+ (https://github.com/partyvi/Pypilot_motor_DRV8873H)
+
+
+
+DRV8873H <----------------------------------------->		Arduino
+DVDD        (pin 1) Cap 1uf to GND                          GND
+/FAULT      (pin 2) LEDwith  5.1K  from 5V and 		 		D11
+/MODE       (pin3)                                          GND
+SR          (pin4)                                          GND
+/ITRIP      (Pin5)                                          5V
+/OL         (pin6)                                          5V
+IN1         (Pin7)											D2
+IN2         (Pin8)											D3
+DISABLE     (pin9)											GND
+       IPROPI1 and IPROPI2 Together										
+IPROPI1     (pin10)	connected to GND with 54.9Ohm 1% and	ADC pin5 (SHUNT)
+IPROPI2		 (pin12)  										ADC pin5 (SHUNT) 
+
+VM          (pin13)			+12...+38V (POWER)												
+VM          (pin20)			+12...+38V	(POWER)					
+
+SRC         (pin16)			POWER GND						GND
+SRC         (pin17)			POWER GND						GND
+
+OUT1 	    (pin18)			MOTOR Power OUT1
+OUT1 	    (pin19)			MOTOR Power OUT1
+
+OUT2        (pin14)			MOTOR Power OUT2
+OUT2        (pin15)			MOTOR Power OUT2
+
+VPP         (pin21)	Connected to +12 POWER  over cap 1uF
+
+CPH         (pin22) connected to CPL (pin22) over 47nF
+CPL         (pin23)
+
+GND         (pin24)			Power GND						GND
+GND         (PAD)			Power GND						GND
+
+//----------------------------------------------------------------------
+AS5601 magnetic rotary sensor 
+AS5601 <-----------------------------------> arduino
+VDD     (pin1)  100nF in parallel             5V
+3V3     (pin2)  1uF to GND
+GND 	(pin4)                                GND
+SCL     (pin7)                                D9 (pin13)
+SDA     (pin6)                                D10 (pin14)
 */
 
 //#define VNH2SP30 // defined if this board is used
+#define DRV8873H					// DRV8873 motor controller support
 //#define DISABLE_TEMP_SENSE    // if no temp sensors avoid errors
 //#define DISABLE_VOLTAGE_SENSE // if no voltage sense
 //#define DISABLE_RUDDER_SENSE  // if no rudder sense
+#define AMS5601rudderSensor			//AMS5601 Rudder Sensor support on D9-D10 
 
+//#define AMS5601rudderSensor_debug   //AMS5601 Rudder Sensor debug
 
+#ifdef AMS5601rudderSensor
+	#include "AMS_5601.h"
+#endif 
 // run at 4mhz instead of 16mhz to save power,
 // and to be able to measure lower current from the shunt
 
@@ -172,24 +243,60 @@ uint8_t pwm_style = 2; // detected to 0 or 1 unless detection disabled, default 
 // if switches pull this pin low, the motor is disengaged
 // and will be noticed by the control program
 
-#define pwm_output_pin 9
-
 #define hbridge_a_bottom_pin 2
 #define hbridge_b_bottom_pin 3
 #define hbridge_a_top_pin 9
 #define hbridge_b_top_pin 10
+
+#define pwm_output_pin 9
 #define enable_pin 10 // for vnh2sp30
+
+// ADC chanals mapping
+
+#ifndef DRV8873H
+// Muxes: A1,A0,A2,A3,A4
+#define ADC_VOLTAGE_PIN 	A0
+
+#define MUX_CURRENT 	_BV(MUX0)
+#define MUX_VOLTAGE 	0
+#define MUX_CONTROLLER_TEMP _BV(MUX1)
+#define MUX_MOTOR_TEMP 	_BV(MUX0) | _BV(MUX1)
+#define MUX_RUDDER 		_BV(MUX2)
+#else
+// Muxes:    A5,A4,A6,A7,A3
+#define ADC_VOLTAGE_PIN 	A4
+#define MUX_CURRENT 	_BV(MUX0) | _BV(MUX2)
+#define MUX_VOLTAGE 	_BV(MUX2)
+#define MUX_CONTROLLER_TEMP _BV(MUX1) | _BV(MUX2)
+#define MUX_MOTOR_TEMP 	_BV(MUX0) | _BV(MUX1) | _BV(MUX2)
+#define MUX_RUDDER 		_BV(MUX1) | _BV(MUX0)
+#endif
+
+
+
 
 // for direct mosfet mode, define how to turn on/off mosfets
 // do not use digitalWrite!
-#define a_top_on  PORTB |= _BV(PB1)
-#define a_top_off PORTB &= ~_BV(PB1)
-#define a_bottom_on PORTD |= _BV(PD2)
-#define a_bottom_off PORTD &= ~_BV(PD2)
-#define b_top_on  PORTB |= _BV(PB2)
-#define b_top_off PORTB &= ~_BV(PB2)
-#define b_bottom_on PORTD |= _BV(PD3)
-#define b_bottom_off PORTD &= ~_BV(PD3)
+#ifndef DRV8873H
+	#define a_top_on  PORTB |= _BV(PB1)
+	#define a_top_off PORTB &= ~_BV(PB1)
+	#define a_bottom_on PORTD |= _BV(PD2)
+	#define a_bottom_off PORTD &= ~_BV(PD2)
+	#define b_top_on  PORTB |= _BV(PB2)
+	#define b_top_off PORTB &= ~_BV(PB2)
+	#define b_bottom_on PORTD |= _BV(PD3)
+	#define b_bottom_off PORTD &= ~_BV(PD3)
+#else
+	// DRV 8873H motor controller support
+	#define a_top_on	// Top switches not in use 
+	#define a_top_off	// Top switches not in use
+	#define a_bottom_off PORTD |= _BV(PD2) 	// bottom is inverted
+	#define a_bottom_on PORTD &= ~_BV(PD2)	// bottom is inverted
+	#define b_top_on	// Top switches not in use
+	#define b_top_off	// Top switches not in use
+	#define b_bottom_off PORTD |= _BV(PD3)	// bottom is inverted
+	#define b_bottom_on PORTD &= ~_BV(PD3)	// bottom is inverted
+#endif
 
 #define clutch_pin 11 // use pin 11 to engage clutch
 
@@ -292,6 +399,9 @@ uint16_t max_controller_temp= 7000; // 70C
 uint16_t max_motor_temp = 7000; // 70C
 uint8_t max_slew_speed = 15, max_slew_slow = 35; // 200 is full power in 1/10th of a second
 uint8_t rudder_min = 0, rudder_max = 255;
+#ifdef AMS5601rudderSensor
+AMS_5601 rudder_sensor; 
+#endif
 
 uint8_t eeprom_read_addr = 0;
 uint8_t eeprom_read_end = 0;
@@ -349,12 +459,12 @@ void setup()
 
     set_sleep_mode(SLEEP_MODE_IDLE); // wait for serial
 
-    digitalWrite(A0, LOW);
-    pinMode(A0, OUTPUT);
+    digitalWrite(ADC_VOLTAGE_PIN, LOW);
+    pinMode(ADC_VOLTAGE_PIN, OUTPUT);
     voltage_sense = digitalRead(voltage_sense_pin);
     if(!voltage_sense)
         pinMode(voltage_sense_pin, INPUT); // if attached, turn off pullup
-    pinMode(A0, INPUT);
+    pinMode(ADC_VOLTAGE_PIN, INPUT);
 
     digitalWrite(clutch_pin, LOW);
     pinMode(clutch_pin, OUTPUT); // clutch
@@ -382,6 +492,9 @@ void setup()
 #ifndef VNH2SP30
     pwm_style = digitalRead(pwm_style_pin);
 #endif
+#ifdef DRV8873H
+    pwm_style = 0;
+#endif 
     if(pwm_style) {
         digitalWrite(pwm_output_pin, LOW); /* enable internal pullups */
         pinMode(pwm_output_pin, OUTPUT);
@@ -408,6 +521,9 @@ void setup()
 #endif
     ADCSRA |= _BV(ADSC); // start conversion
 #endif    
+#ifdef AMS5601rudderSensor
+  rudder_sensor.init();
+#endif
 }
 
 uint8_t in_bytes[3];
@@ -485,6 +601,8 @@ void position(uint16_t value)
             TIMSK1 = _BV(TOIE1) | _BV(OCIE1B);
         } else {
             TIMSK1 = 0;//_BV(TOIE1);
+            
+#ifndef DRV8873H
             a_top_off;
             b_top_off;
             dead_time;
@@ -492,6 +610,10 @@ void position(uint16_t value)
 //            b_bottom_on;
             a_bottom_off;
             b_bottom_off;
+#else
+            a_bottom_on;  // set brake to kep out of voltage surge
+            b_bottom_on;
+#endif
         }
 
         if(TIMSK1) {
@@ -640,8 +762,10 @@ void engage()
 
         pinMode(hbridge_a_bottom_pin, OUTPUT);
         pinMode(hbridge_b_bottom_pin, OUTPUT);
+#ifndef DRV8873H
         pinMode(hbridge_a_top_pin, OUTPUT);
         pinMode(hbridge_b_top_pin, OUTPUT);
+#endif
     }
 
     position(1000);
@@ -659,7 +783,7 @@ void engage()
 // set hardware pwm to period of "(1500 + 1.5*value)/2" or "750 + .75*value" microseconds
 
 enum {CURRENT, VOLTAGE, CONTROLLER_TEMP, MOTOR_TEMP, RUDDER, CHANNEL_COUNT};
-const uint8_t muxes[] = {_BV(MUX0), 0, _BV(MUX1), _BV(MUX0) | _BV(MUX1), _BV(MUX2)};
+const uint8_t muxes[] = {MUX_CURRENT, MUX_VOLTAGE, MUX_CONTROLLER_TEMP, MUX_MOTOR_TEMP, MUX_RUDDER};
 
 volatile struct adc_results_t {
     uint32_t total;
@@ -830,6 +954,7 @@ uint16_t TakeVolts(uint8_t p)
 uint16_t TakeTemp(uint8_t index, uint8_t p)
 {
     uint32_t v = TakeADC(index, p);
+    uint16_t temp; 
     // thermistors are 100k resistor to 5v, and 10k NTC to GND with 1.1v ref
     // V = 1.1 * v / 1024
     // V = R / (R + 100k) * 5.0
@@ -845,7 +970,11 @@ uint16_t TakeTemp(uint8_t index, uint8_t p)
     // T = 300000/(R+2600) + 2
 
     // temperature in hundreths of degrees
-    return 30000000/(R+2600) + 200;
+    temp = 30000000/(R+2600) + 200;
+#ifdef DRV8873H
+    if ( index==CONTROLLER_TEMP ) temp-=2000;  // correction for particular sensors
+#endif
+    return temp;
 }
 
 uint16_t TakeRudder(uint8_t p)
@@ -862,6 +991,20 @@ uint16_t TakeInternalTemp(uint8_t p)
     // 25C = 314mV, 85C = 380mV
     // T = 909*V - 260
     return 611 * v / 100 - 26000;
+}
+#endif
+
+#ifdef AMS5601rudderSensor 
+// Read Magnetic rudder sensor
+uint16_t TakeMagRudder(void)
+{
+	uint16_t v;
+	uint16_t vv = rudder_sensor.getRawAngle();
+	if ( vv < 4095 ) { // if valid value (0...4095)
+	 v = vv&1023;  // only 1/4 (90 degrees is interesting)
+	 v = 2000+(v<<5)+(v<<4); // Strach 90 degrees over 2000...1024*48
+	}   else v=0;
+	return v;
 }
 #endif
 
@@ -1117,8 +1260,8 @@ void loop()
             TakeVolts(0); // clear readings
             TakeVolts(1);
         } else
-        /* voltage must be between 9 and max voltage */
-        if(volts <= 900 || volts >= max_voltage) {
+        /* voltage must be between 8 and max voltage */
+        if(volts <=800 || volts >= max_voltage) {
             stop();
             flags |= BADVOLTAGE;
         } else
@@ -1149,8 +1292,17 @@ void loop()
 
     const int rudder_react_count = 160; // approx 0.2 second reaction
     if(CountADC(RUDDER, 1) > rudder_react_count) {
-        uint16_t v = TakeRudder(1);
-        if(rudder_sense) {
+     #ifdef AMS5601rudderSensor_debug 
+          debug("Rudder magnet=%d strength=%d raw=%d\n\r",rudder_sensor.getMagnetStrength(),rudder_sensor.getMagnitude(),rudder_sensor.getRawAngle());
+     #endif
+
+     #ifndef AMS5601rudderSensor 
+		uint16_t v = TakeRudder(1);	
+     #else
+		uint16_t v = TakeMagRudder();
+	 #endif
+   
+       if(rudder_sense) {
             uint16_t w = v >> 8;
             if(w < rudder_min) {
                 stop_rev();
@@ -1207,8 +1359,13 @@ void loop()
                 return;
             if(rudder_sense == 0)
                 v = 65535; // indicate invalid rudder measurement
-            else
-                v = TakeRudder(0);
+            else {
+	        #ifndef AMS5601rudderSensor 
+                 v = TakeRudder(0);	
+                #else
+                 v = TakeMagRudder();
+                #endif
+            }
             code = RUDDER_SENSE_CODE;
             break;
         case 3: case 13: case 23: case 33:
