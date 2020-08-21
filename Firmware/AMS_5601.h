@@ -23,9 +23,9 @@ class AMS_5601
 {
   public:
 
-    AMS_5601(void);
+    AMS_5601();
     
-    void i2cinit(void);
+    void i2cinit();
 
     int     getAddress();                           // get AMS5601 address, set and fixed to 0x36
 

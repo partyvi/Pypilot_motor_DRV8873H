@@ -7,7 +7,7 @@
  */
 
 #include "Arduino.h"
-#include "GPIO_I2C.h"
+#include "gpio_i2c.h"
 
 GPIO_I2C::GPIO_I2C()
 {

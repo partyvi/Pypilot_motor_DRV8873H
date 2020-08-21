@@ -51,13 +51,19 @@ $(SKETCHNAME).cpp.hex: $(SKETCHNAME).cpp.elf
 $(SKETCHNAME).cpp.eep: $(SKETCHNAME).cpp.elf
 	$(OBJCOPY) -O ihex -j .eeprom --set-section-flags=.eeprom=alloc,load --no-change-warnings --change-section-lma .eeprom=0 $< $@
 
-$(SKETCHNAME).cpp.elf: $(OBJSD) obj/$(SKETCHNAME).o objs
+$(SKETCHNAME).cpp.elf: $(OBJSD) obj/$(SKETCHNAME).o objs obj/gpio_i2c.o obj/AMS_5601.o
 	$(CC) -mmcu=$(MCU) $(LDFLAGS) -o $@ $(OBJS)
 
 .PHONY: objs
 objs:
 	echo $(OBJSD) | sed s,$(ARDUINO_PATH),obj$(ARDUINO_PATH),g > objs
-        OBJS = $(shell cat objs) obj/$(SKETCHNAME).o
+        OBJS = $(shell cat objs) obj/$(SKETCHNAME).o obj/gpio_i2c.o obj/AMS_5601.o
+
+obj/gpio_i2c.o : gpio_i2c.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+obj/AMS_5601.o : AMS_5601.cpp gpio_i2c.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 obj/$(SKETCHNAME).o : $(SKETCHNAME).ino
 	cp $< obj/$<.cpp

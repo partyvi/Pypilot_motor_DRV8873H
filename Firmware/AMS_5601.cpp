@@ -21,7 +21,7 @@
 #ifndef GPIO_I2C_IN_USE
 	#include "Wire.h"
 #else
-	#include "GPIO_I2C.h"
+	#include "gpio_i2c.h"
   GPIO_I2C Wire;
 #endif
   

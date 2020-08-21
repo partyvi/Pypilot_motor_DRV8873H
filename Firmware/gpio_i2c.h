@@ -50,7 +50,7 @@ class GPIO_I2C
 {
   public:
 
-    GPIO_I2C(void);
+    GPIO_I2C();
     void init();  
     void endTransmission();  
     word requestFrom(word address, word len);
